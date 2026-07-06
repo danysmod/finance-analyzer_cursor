@@ -1,0 +1,281 @@
+---
+description: Архитектура FinanceAnalyzerCursor — сервисы, слои, зависимости и соглашения
+alwaysApply: true
+---
+
+# FinanceAnalyzerCursor — Architecture
+
+## Назначение проекта
+
+Сервис для **финансового анализа и прогнозирования будущих трат**. Система собирает транзакции из разных источников, классифицирует их и на основе истории строит аналитику и прогнозы.
+
+Стек: **.NET 10**, C#, nullable reference types.
+
+---
+
+## Верхнеуровневые сервисы (bounded contexts)
+
+Solution разделён на три независимых сервиса. Каждый — отдельный solution folder со своими проектами.
+
+### Ledger
+
+**Ответственность:** получение и унификация сырых финансовых данных из внешних источников.
+
+Источники данных (текущие и планируемые):
+- выгрузка транзакций из банка;
+- чеки из почты;
+- ручной ввод через Telegram-бот;
+- парсинг данных с отправленных фотографий (OCR).
+
+Ledger **не классифицирует** и **не анализирует** — только собирает и нормализует.
+
+### Classifier
+
+**Ответственность:** классификация новых данных из Ledger.
+
+Инкапсулирует знания о:
+- категориях трат;
+- конкретных товарах;
+- переводах другим людям;
+- и т.д.
+
+Получает сырые транзакции → возвращает обогащённые/размеченные.
+
+### Analytics
+
+**Ответственность:** ключевая бизнес-логика анализа.
+
+- анализ текущих трат;
+- прогнозирование будущих трат.
+
+Потребляет классифицированные данные из Classifier (или Ledger + Classifier).
+
+---
+
+## Поток данных между сервисами
+
+```
+[Банк | Почта | Telegram | Фото]
+            │
+            ▼
+         Ledger          ← сбор и нормализация
+            │
+            ▼
+       Classifier         ← категории, товары, переводы
+            │
+            ▼
+        Analytics         ← анализ и прогноз
+```
+
+---
+
+## Структура solution
+
+```
+FinanceAnalyzerCursor.sln
+├── Ledger/                                (корневая папка сервиса)
+│   ├── FinanceAnalyzerCursor.Ledger.Domain
+│   ├── FinanceAnalyzerCursor.Ledger.Application
+│   ├── FinanceAnalyzerCursor.Ledger.Infrastructure
+│   ├── FinanceAnalyzerCursor.Ledger.Api
+│   └── FinanceAnalyzerCursor.Ledger.Tests
+├── Classifier/                            (корневая папка сервиса)
+│   └── FinanceAnalyzerCursor.Classifier.Api   ← заготовка, расширять по той же схеме
+└── Analytics/                             (корневая папка сервиса)
+    └── FinanceAnalyzerCursor.Analytics.Api    ← заготовка, расширять по той же схеме
+```
+
+Каждый сервис — **физическая папка** в корне репозитория. Новые проекты bounded context создаются внутри соответствующей папки (`Ledger/`, `Classifier/`, `Analytics/`).
+
+**Classifier** и **Analytics** пока содержат только Api-проекты. При развитии каждый bounded context получает ту же луковую структуру: `Domain → Application → Infrastructure → Api + Tests`.
+
+---
+
+## Луковая архитектура (Onion Architecture)
+
+Шаблон для каждого bounded context (эталон — **Ledger**).
+
+### Слои и зависимости
+
+```
+                    ┌─────────────┐
+                    │     Api     │  ← composition root, HTTP/CLI
+                    └──────┬──────┘
+                           │
+              ┌────────────┴────────────┐
+              ▼                         ▼
+    ┌──────────────────┐    ┌──────────────────┐
+    │  Infrastructure  │    │   Application    │
+    │  (адаптеры)      │───▶│  (use cases)     │
+    └──────────────────┘    └────────┬─────────┘
+                                     ▼
+                            ┌──────────────────┐
+                            │     Domain       │  ← ядро, без зависимостей
+                            └──────────────────┘
+```
+
+| Слой | Проект | Что содержит | Зависит от |
+|------|--------|--------------|------------|
+| **Domain** | `*.Domain` | Сущности, value objects, доменные события | — |
+| **Application** | `*.Application` | Use cases, application services, **ports** (интерфейсы к внешнему миру), options, query-модели | Domain |
+| **Infrastructure** | `*.Infrastructure` | **Adapters**: HTTP-клиенты банков, mock, OCR, email, Telegram | Application |
+| **Api** | `*.Api` | Точка входа, DI composition root, controllers/endpoints | Application + Infrastructure |
+| **Tests** | `*.Tests` | Unit/integration тесты | Application, Infrastructure, Domain |
+
+**Правило зависимостей:** строго внутрь. Domain не знает ни о чём снаружи. Application определяет ports, Infrastructure их реализует.
+
+---
+
+## Ledger — текущая реализация
+
+### Domain
+
+```
+Ledger.Domain/
+└── Entities/
+    └── BankTransaction.cs      # ExternalId, Date, Amount, Currency, Description, Category?
+```
+
+### Application
+
+```
+Ledger.Application/
+├── Banking/
+│   ├── IBankDataProvider.cs    # application service interface
+│   ├── BankDataProvider.cs     # оркестрация параллельной пагинации
+│   ├── BankDataProviderOptions.cs   # PageSize, MaxParallelRequests
+│   └── BankTransactionQuery.cs      # From, To, Offset, PageSize
+└── Ports/
+    └── IBankClient.cs          # outbound port — один запрос к банку
+```
+
+### Infrastructure
+
+```
+Ledger.Infrastructure/
+└── Banking/Banks/
+    └── Mock/
+        └── MockBankClient.cs   # тестовый адаптер IBankClient
+```
+
+### Api
+
+```
+Ledger.Api/
+├── Program.cs                  # composition root
+└── Extensions/
+    └── BankingExtensions.cs    # AddLedgerApplication(...)
+```
+
+### Tests
+
+```
+Ledger.Tests/
+└── Banking/
+    └── BankDataProviderTests.cs
+```
+
+---
+
+## BankDataProvider — паттерн получения данных из банка
+
+Двухуровневая абстракция:
+
+| Интерфейс | Уровень | Роль |
+|-----------|---------|------|
+| `IBankClient` | Port (Infrastructure реализует) | Один HTTP-запрос: `offset + pageSize` в диапазоне `From–To` |
+| `IBankDataProvider` | Application service | Оркестрация: параллельные пачки, накопление offset, сбор всех страниц |
+
+### Параллельная пагинация пачками
+
+Количество страниц **неизвестно заранее**. Используется **batch-подход** (безопаснее свободных воркеров с общим offset):
+
+```
+Пачка 1:  offset 0, 100, 200, 300   → параллельно (MaxParallelRequests)
+         ↓ все полные → следующая пачка
+Пачка 2:  offset 400, 500, 600, 700
+         ↓ неполная/пустая страница → стоп
+```
+
+**Условия остановки:**
+- пустой список на странице;
+- неполная страница (`count < PageSize`);
+- исключение из `IBankClient` (пробрасывается наверх);
+- `CancellationToken`.
+
+**Настройки через DI** (`BankDataProviderOptions`):
+- `PageSize` — размер одной страницы (default: 100);
+- `MaxParallelRequests` — параллельных запросов в пачке (default: 4).
+
+### Добавление нового банка
+
+1. Создать `{Bank}BankClient` в `Infrastructure/Banking/Banks/`.
+2. Реализовать `IBankClient` — один запрос с `query.Offset` и `query.PageSize`.
+3. Зарегистрировать в DI в Api (composition root).
+4. Domain и Application **не менять**.
+
+---
+
+## DI и composition root
+
+Регистрация сервисов — только в **Api** (или dedicated `*.Api/Extensions/`).
+
+```csharp
+// Api/Program.cs — пример Ledger
+services.AddMockBankClient(totalTransactions: 250);  // Infrastructure adapter
+services.AddLedgerApplication(options =>            // Application services
+{
+    options.PageSize = 100;
+    options.MaxParallelRequests = 4;
+});
+```
+
+- `AddLedgerApplication` — регистрирует `IBankDataProvider`, `BankDataProviderOptions`.
+- Адаптеры (`IBankClient`) регистрируются отдельно — по одному на банк/источник.
+
+---
+
+## Соглашения по коду
+
+### Namespaces
+
+Соответствуют структуре папок и слоям:
+- `FinanceAnalyzerCursor.Ledger.Domain.Entities`
+- `FinanceAnalyzerCursor.Ledger.Application.Banking`
+- `FinanceAnalyzerCursor.Ledger.Application.Ports`
+- `FinanceAnalyzerCursor.Ledger.Infrastructure.Banking.Banks.Mock`
+- `FinanceAnalyzerCursor.Ledger.Api.Extensions`
+
+### Ports vs Adapters
+
+- **Port** (интерфейс) → `Application/Ports/` — то, что application layer ожидает от внешнего мира.
+- **Adapter** (реализация) → `Infrastructure/` — конкретный банк, mock, email-клиент и т.д.
+
+### Тесты
+
+- Отдельный проект `{Service}.Tests` внутри solution folder сервиса.
+- Unit-тесты application services — через stub/mock ports, без реальной инфраструктуры.
+- Integration-тесты — с mock-адаптерами из Infrastructure.
+
+### Новый функционал
+
+1. Сущность → `Domain`.
+2. Интерфейс use case + реализация → `Application`.
+3. Port (если нужен внешний вызов) → `Application/Ports`.
+4. Реализация port → `Infrastructure`.
+5. Регистрация DI → `Api/Extensions`.
+6. Тесты → `{Service}.Tests`.
+
+**Не добавлять** бизнес-логику в Api. **Не ссылаться** из Domain на Application/Infrastructure.
+
+---
+
+## Планируемое развитие
+
+| Сервис | Ближайшие задачи |
+|--------|------------------|
+| **Ledger** | Реальные bank clients, email-провайдер чеков, Telegram-бот, OCR-провайдер |
+| **Classifier** | Domain + Application + ML/правила классификации |
+| **Analytics** | Domain + Application + модели прогнозирования |
+
+При добавлении Classifier и Analytics — **копировать структуру слоёв Ledger**, не смешивать bounded contexts в одном проекте.
