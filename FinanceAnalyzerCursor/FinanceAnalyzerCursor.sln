@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FinanceAnalyzerCursor.Ledger", "FinanceAnalyzerCursor.Ledger\FinanceAnalyzerCursor.Ledger.csproj", "{C63C66C4-7969-4E56-A754-0063DA0D78A2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FinanceAnalyzerCursor.Classifier", "FinanceAnalyzerCursor.Classifier\FinanceAnalyzerCursor.Classifier.csproj", "{18FE4EE8-4AD8-4ACA-A8C3-91B8E6873F1A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FinanceAnalyzerCursor.Analytics", "FinanceAnalyzerCursor.Analytics\FinanceAnalyzerCursor.Analytics.csproj", "{EE05C0B7-E221-41D3-86A5-D63C98DE165E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C63C66C4-7969-4E56-A754-0063DA0D78A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C63C66C4-7969-4E56-A754-0063DA0D78A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C63C66C4-7969-4E56-A754-0063DA0D78A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C63C66C4-7969-4E56-A754-0063DA0D78A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{18FE4EE8-4AD8-4ACA-A8C3-91B8E6873F1A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{18FE4EE8-4AD8-4ACA-A8C3-91B8E6873F1A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{18FE4EE8-4AD8-4ACA-A8C3-91B8E6873F1A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{18FE4EE8-4AD8-4ACA-A8C3-91B8E6873F1A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EE05C0B7-E221-41D3-86A5-D63C98DE165E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EE05C0B7-E221-41D3-86A5-D63C98DE165E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EE05C0B7-E221-41D3-86A5-D63C98DE165E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EE05C0B7-E221-41D3-86A5-D63C98DE165E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
