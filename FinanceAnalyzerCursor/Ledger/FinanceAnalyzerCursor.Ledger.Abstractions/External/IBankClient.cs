@@ -1,7 +1,6 @@
-using FinanceAnalyzerCursor.Ledger.Application.Banking;
 using FinanceAnalyzerCursor.Ledger.Domain.Entities;
 
-namespace FinanceAnalyzerCursor.Ledger.Application.Ports;
+namespace FinanceAnalyzerCursor.Ledger.Abstractions.External;
 
 public interface IBankClient
 {

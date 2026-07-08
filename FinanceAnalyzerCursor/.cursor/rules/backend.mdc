@@ -1,0 +1,412 @@
+---
+description: Единый подход к реализации .NET-проектов — Onion-архитектура, слои и зависимости
+alwaysApply: true
+---
+
+# .NET Backend — Onion Architecture
+
+Стек: **.NET 10+**, C#, nullable reference types.
+
+Каждый bounded context (сервис) строится по **6-слойной Onion-схеме**, но проекты создаются **только по мере необходимости** — без пустых заготовок.
+
+---
+
+## Слои и зависимости
+
+```
+                         ┌─────────────┐
+                         │     API     │  ← composition root, HTTP/CLI, DI (PROD)
+                         └──────┬──────┘
+                                │
+         ┌──────────────────────┼──────────────────────┐
+         ▼                      ▼                      ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│   DataAccess    │   │ ExternalServices│   │   Application   │
+│  (БД, репозитории)│   │ (HTTP, email…)  │   │ (бизнес-логика) │
+└────────┬────────┘   └────────┬────────┘   └────────┬────────┘
+         │                     │                     │
+         └─────────────────────┼─────────────────────┘
+                               ▼
+                    ┌─────────────────┐
+                    │  Abstractions   │  ← ports (интерфейсы)
+                    └────────┬────────┘
+                             ▼
+                    ┌─────────────────┐
+                    │     Domain      │  ← ядро, без зависимостей
+                    └─────────────────┘
+```
+
+| Слой | Проект | Содержимое | Зависит от |
+|------|--------|------------|------------|
+| **Domain** | `*.Domain` | Сущности, value objects, доменные события — только модели **бизнес-поведения** | — |
+| **Abstractions** | `*.Abstractions` | Интерфейсы: репозитории/БД, метрики, внешние сервисы, прочие outbound ports | Domain |
+| **Application** | `*.Application` | Use cases, application services, оркестрация, options, query-модели | Abstractions (+ Domain транзитивно) |
+| **DataAccess** | `*.DataAccess` | EF Core, репозитории, миграции; **реализация** интерфейсов БД из Abstractions | Abstractions |
+| **ExternalServices** | `*.ExternalServices` | HTTP-клиенты, email, Telegram и т.д.; **реализация** интерфейсов внешних сервисов из Abstractions | Abstractions |
+| **API** | `*.Api` | Endpoints/controllers, composition root, **DI extensions только для PROD** | Application + **только те слои, которые реально существуют** |
+| **Tests** | `*.Tests` | Unit-тесты, test infrastructure (stubs, mocks, fakes) | Application, Abstractions (+ Domain транзитивно) |
+
+**Правило зависимостей:** строго внутрь. Domain не знает ни о чём снаружи. Application **не ссылается** на DataAccess, ExternalServices и API.
+
+### Слои по необходимости
+
+Не все проекты обязательны для каждого сервиса. **Не создавать проект-пустышку** «на будущее».
+
+| Слой | Когда создавать | Когда не нужен |
+|------|-----------------|----------------|
+| **Domain** | Всегда — ядро bounded context | — |
+| **Application** | Всегда — бизнес-логика | — |
+| **Abstractions** | Есть outbound ports: БД, внешние сервисы, метрики и т.д. | Нет внешних зависимостей; чистая in-process логика |
+| **DataAccess** | Есть персистентность (EF Core, репозитории) | Нет интеграции с БД |
+| **ExternalServices** | Есть HTTP/email/Telegram/OCR и другие внешние интеграции | Нет вызовов вне процесса |
+| **API** | Нужна HTTP/CLI точка входа | Worker/console без отдельного Api-проекта — по ситуации |
+| **Tests** | Есть что тестировать | — |
+
+Первый port → добавить **Abstractions** (интерфейс) + **Application** (use case). Реализацию — в **DataAccess** или **ExternalServices** только когда адаптер действительно нужен.
+
+**Минимальный сервис** (нет БД, нет внешних API):
+
+```
+{Service}/
+├── {Prefix}.{Service}.Domain
+├── {Prefix}.{Service}.Application
+├── {Prefix}.{Service}.Api
+└── {Prefix}.{Service}.Tests
+```
+
+**Полный сервис** (все интеграции):
+
+```
+{Service}/
+├── {Prefix}.{Service}.Domain
+├── {Prefix}.{Service}.Abstractions
+├── {Prefix}.{Service}.Application
+├── {Prefix}.{Service}.DataAccess
+├── {Prefix}.{Service}.ExternalServices
+├── {Prefix}.{Service}.Api
+└── {Prefix}.{Service}.Tests
+```
+
+---
+
+## Domain
+
+Только **голые модели домена**, отражающие бизнес-поведение:
+
+- сущности (`Entity`);
+- value objects;
+- доменные события;
+- доменные исключения.
+
+**Не класть в Domain:**
+
+- DTO, request/response модели API;
+- EF-атрибуты и конфигурации;
+- вспомогательные классы «для удобства» (helpers, extensions без доменного смысла);
+- интерфейсы репозиториев и внешних сервисов;
+- anything infrastructure-related.
+
+---
+
+## Abstractions
+
+Все **ports** — контракты к внешнему миру. Проект создаётся, когда появляется **первая** внешняя зависимость (БД, HTTP, метрики и т.д.).
+
+Application зависит только от них, не от реализаций.
+
+Примеры:
+
+```
+Abstractions/
+├── Persistence/
+│   └── ITransactionRepository.cs
+├── Metrics/
+│   └── IMetricsPublisher.cs
+└── External/
+    └── IBankClient.cs
+```
+
+- Сигнатуры методов используют типы из **Domain** (или примитивы).
+- Никаких реализаций, DI, HttpClient, DbContext.
+
+---
+
+## Application
+
+Вся **бизнес-логика** bounded context:
+
+- use cases / application services;
+- оркестрация (пагинация, агрегация, валидация правил);
+- options-классы (`*Options`);
+- query/command-модели уровня приложения (не API DTO).
+
+Application **инжектит интерфейсы из Abstractions**, не конкретные классы из DataAccess/ExternalServices.
+
+```
+Application/
+├── Banking/
+│   ├── IBankDataProvider.cs
+│   ├── BankDataProvider.cs
+│   └── BankDataProviderOptions.cs
+└── ...
+```
+
+---
+
+## DataAccess
+
+Реализация доступа к данным — **только если сервис работает с БД**:
+
+- DbContext, конфигурации сущностей;
+- репозитории (`ITransactionRepository` → `TransactionRepository`);
+- миграции.
+
+Зависит **только** от Abstractions (+ Domain транзитивно). Не содержит бизнес-логики. **Нет БД — проект не создавать.**
+
+---
+
+## ExternalServices
+
+Реализация интеграций с внешними системами — **только если есть внешние вызовы**:
+
+- HTTP-клиенты банков, платёжных систем;
+- email, Telegram, OCR-провайдеры.
+
+Зависит **только** от Abstractions. **Mock/stub-адаптеры — не здесь**, только в `*.Tests`. **Нет внешних интеграций — проект не создавать.**
+
+---
+
+## API
+
+Composition root для PROD:
+
+- `Program.cs`, minimal API / controllers;
+- **Extensions** для DI (`AddXxxApplication`, `AddXxxDataAccess`, `AddYyyBankClient`) — только production-регистрации;
+- маппинг HTTP ↔ application models;
+- middleware, auth, OpenAPI.
+
+**Не класть в API:** бизнес-логику, прямые вызовы БД, логику HTTP-клиентов.
+
+---
+
+## Структура solution (на один bounded context)
+
+Базовый шаблон — **полный** набор слоёв. В конкретном сервисе оставляют только нужные (см. [Слои по необходимости](#слои-по-необходимости)).
+
+Пример **Ledger** (банковские API, без БД на текущем этапе):
+
+```
+Ledger/
+├── FinanceAnalyzerCursor.Ledger.Domain
+├── FinanceAnalyzerCursor.Ledger.Abstractions     ← IBankClient и др. ports
+├── FinanceAnalyzerCursor.Ledger.Application
+├── FinanceAnalyzerCursor.Ledger.ExternalServices ← bank clients
+├── FinanceAnalyzerCursor.Ledger.Api
+└── FinanceAnalyzerCursor.Ledger.Tests
+```
+
+`DataAccess` добавить, когда появится персистентность — не раньше.
+
+---
+
+## DI и composition root
+
+Регистрация сервисов — **только в API** (или `*.Api/Extensions/`):
+
+```csharp
+// Api/Program.cs — регистрируем только то, что есть в solution
+builder.Services.AddLedgerApplication(options => { ... });
+builder.Services.AddSberBankClient(builder.Configuration);   // ExternalServices
+// builder.Services.AddLedgerDataAccess(...);               // когда появится DataAccess
+```
+
+| Extension | Когда добавлять |
+|-----------|-----------------|
+| `Add{Service}Application` | Всегда |
+| `Add{Service}DataAccess` | Только если есть проект DataAccess |
+| `Add{Bank}Client` / `Add{Provider}…` | Только если есть проект ExternalServices |
+
+---
+
+## Добавление нового функционала
+
+1. Сущность / value object → **Domain**
+2. Интерфейс port → **Abstractions** (если есть внешняя зависимость)
+3. Use case + реализация → **Application**
+4. Реализация port (БД) → **DataAccess** (если нужна БД)
+5. Реализация port (внешний сервис) → **ExternalServices** (если нужен внешний вызов)
+6. Endpoint + DI → **Api**
+7. Тесты → **Tests**
+
+---
+
+## Unit-тесты
+
+Все unit-тесты следуют **единым правилам**: AAA, изолированная test infrastructure, моки всех внешних зависимостей.
+
+**Библиотеки (обязательны в `*.Tests`):** Moq, AutoFixture (+ `AutoFixture.Xunit2` при необходимости). NSubstitute допустим, если уже используется в проекте.
+
+### Принцип AAA (Arrange–Act–Assert)
+
+Каждый тест **явно** разделён на три блока (пустая строка или комментарий `// Arrange` / `// Act` / `// Assert`):
+
+```csharp
+[Fact]
+public async Task GetTransactionsAsync_WhenNoTransactions_ReturnsEmpty()
+{
+    // Arrange
+    var bankClient = new Mock<IBankClient>();
+    bankClient
+        .Setup(c => c.GetTransactionsAsync(It.IsAny<BankTransactionQuery>(), It.IsAny<CancellationToken>()))
+        .ReturnsAsync([]);
+    var provider = CreateProvider(bankClient.Object);
+
+    // Act
+    var result = await provider.GetTransactionsAsync(From, To);
+
+    // Assert
+    Assert.Empty(result);
+}
+```
+
+- **Arrange** — подготовка SUT, моков (Moq), тестовых данных (AutoFixture).
+- **Act** — один вызов тестируемого метода.
+- **Assert** — проверка результата (один сценарий на тест).
+
+Именование: `{Method}_When{Condition}_{ExpectedBehavior}`.
+
+### Moq и AutoFixture — по умолчанию
+
+**Не писать и не генерировать собственные Mock/Stub-классы** для подмены ports. Использовать библиотеки:
+
+| Задача | Инструмент |
+|--------|------------|
+| Подмена port (интерфейс из Abstractions) | **Moq** — `Mock<T>`, `Setup`, `Verify` |
+| Генерация тестовых данных (сущности, value objects) | **AutoFixture** — `fixture.Create<T>()`, `fixture.Build<T>()` |
+| Фиксированные edge-case данные | явный object initializer или `fixture.Build<T>().With(...).Create()` |
+
+```csharp
+// Arrange — Moq для port, AutoFixture для данных
+var fixture = new Fixture();
+var transactions = fixture.CreateMany<BankTransaction>(37).ToList();
+
+var bankClient = new Mock<IBankClient>();
+bankClient
+    .Setup(c => c.GetTransactionsAsync(It.IsAny<BankTransactionQuery>(), It.IsAny<CancellationToken>()))
+    .ReturnsAsync((BankTransactionQuery q, CancellationToken _) =>
+        transactions.Skip(q.Offset).Take(q.PageSize).ToList());
+```
+
+### Собственные реализации — только при необходимости
+
+Ручная реализация port (`InMemory…`, `Fake…`) допустима **только** когда Moq недостаточно — нужно проверить **реальное поведение** адаптера с состоянием, обычно в сценариях **read + write**:
+
+- in-memory repository с сохранением и чтением;
+- накопление вызовов / side effects, которые сложно выразить через `Setup`/`Verify`;
+- интеграционный тест нескольких операций через один адаптер.
+
+```
+Tests/
+├── Banking/
+│   └── BankDataProviderTests.cs      ← Moq + AutoFixture
+├── Fakes/                            ← только hand-written, когда Moq не подходит
+│   └── InMemoryTransactionRepository.cs
+└── Helpers/
+    └── BankTransactionFactory.cs     ← при необходимости; иначе AutoFixture
+```
+
+| Что | Когда | Где |
+|-----|-------|-----|
+| `Mock<T>` (Moq) | Подмена port в unit-тестах — **по умолчанию** | inline в тесте или `Tests/` |
+| AutoFixture | Генерация тестовых данных — **по умолчанию** | inline в тесте |
+| Hand-written fake (`InMemory…`) | Read+write, stateful behaviour, интеграционный сценарий | `Tests/Fakes/` |
+| ❌ `StubXxx`, `MockXxx` классы | Запрещены как замена Moq | — |
+
+Проект Tests **не ссылается** на DataAccess, ExternalServices, Api.
+
+### Test infrastructure — только в `*.Tests`
+
+Вся инфраструктура для тестов (Moq-setup helpers, AutoFixture customizations, hand-written fakes) живёт **исключительно** в проекте Tests — не в production-проектах.
+
+### Все внешние зависимости — всегда замоканы
+
+В unit-тестах **никогда** не используются реальные или production-адаптеры:
+
+- ❌ реальная БД, EF Core, in-memory SQLite;
+- ❌ HTTP-клиенты, классы из ExternalServices;
+- ❌ репозитории из DataAccess;
+- ❌ `WebApplicationFactory` с PROD DI из Api;
+- ❌ собственные `StubBankClient` / `MockBankClient` вместо Moq.
+
+- ✅ `Mock<IBankClient>`, `Mock<ITransactionRepository>` — Moq;
+- ✅ тестовые сущности — AutoFixture;
+- ✅ SUT создаётся **напрямую** (`new BankDataProvider(mock.Object, options)`) или через минимальный test-specific DI без production extensions.
+
+Каждый port из Abstractions, который использует SUT, подменяется через Moq (или hand-written fake из `Tests/Fakes/` — если обосновано) в **Arrange**.
+
+### Что тестировать
+
+| Слой | Unit-тесты | Как |
+|------|------------|-----|
+| **Application** | ✅ основной фокус | SUT + Moq для ports |
+| **Domain** | ✅ чистая логика | Прямые вызовы; AutoFixture для данных |
+| **DataAccess** | ❌ не unit-тестируется с реальной БД | Покрывается через тесты Application с `Mock<IRepository>` или `InMemory…` fake |
+| **ExternalServices** | ❌ | Покрывается через тесты Application с `Mock<IClient>` |
+| **API** | ❌ в рамках unit-подхода | Бизнес-логика проверяется в Application |
+
+### Пример: hand-written fake (read + write)
+
+```csharp
+// Tests/Fakes/InMemoryTransactionRepository.cs
+// Только когда нужно проверить сохранение и последующее чтение
+internal sealed class InMemoryTransactionRepository : ITransactionRepository
+{
+    private readonly List<BankTransaction> _store = [];
+
+    public Task SaveAsync(BankTransaction transaction, CancellationToken ct = default)
+    {
+        _store.Add(transaction);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<BankTransaction>> GetByDateRangeAsync(
+        DateOnly from, DateOnly to, CancellationToken ct = default)
+    {
+        var result = _store.Where(t => DateOnly.FromDateTime(t.Date.DateTime) >= from
+                                    && DateOnly.FromDateTime(t.Date.DateTime) <= to).ToList();
+        return Task.FromResult<IReadOnlyList<BankTransaction>>(result);
+    }
+}
+```
+
+---
+
+## Соглашения
+
+### Namespaces
+
+Соответствуют структуре папок:
+
+- `FinanceAnalyzerCursor.Ledger.Domain.Entities`
+- `FinanceAnalyzerCursor.Ledger.Abstractions.Persistence`
+- `FinanceAnalyzerCursor.Ledger.Application.Banking`
+- `FinanceAnalyzerCursor.Ledger.DataAccess.Repositories`
+- `FinanceAnalyzerCursor.Ledger.ExternalServices.Banks.Sber`
+- `FinanceAnalyzerCursor.Ledger.Api.Extensions`
+
+### Nullable reference types
+
+Включены во всех проектах. Публичные API — с явными nullable-аннотациями.
+
+---
+
+## Чеклист перед merge
+
+- [ ] Domain не ссылается ни на один другой проект
+- [ ] Application не ссылается на DataAccess, ExternalServices, Api
+- [ ] Новые интерфейсы — в Abstractions, реализации — в DataAccess или ExternalServices
+- [ ] Бизнес-логика не в Api, DataAccess, ExternalServices
+- [ ] PROD DI extensions — в Api; test infrastructure — только в Tests
+- [ ] Unit-тесты следуют AAA; ports — через Moq; данные — через AutoFixture
+- [ ] Нет hand-written Mock/Stub классов без обоснования (read+write / stateful fake)
+- [ ] Нет пустых проектов-слоёв без реального содержимого (DataAccess, ExternalServices, Abstractions — только по необходимости)

@@ -1,18 +1,27 @@
-﻿using FinanceAnalyzerCursor.Ledger.Api.Extensions;
+﻿using FinanceAnalyzerCursor.Ledger.Abstractions.External;
+using FinanceAnalyzerCursor.Ledger.Api.Extensions;
 using FinanceAnalyzerCursor.Ledger.Application.Banking;
-using FinanceAnalyzerCursor.Ledger.Infrastructure.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
 var services = new ServiceCollection();
 
-services.AddMockBankClient(totalTransactions: 250);
 services.AddLedgerApplication(options =>
 {
     options.PageSize = 100;
     options.MaxParallelRequests = 4;
 });
 
+// Register IBankClient when a bank adapter is available:
+// services.AddSberBankClient(configuration);
+
 using var provider = services.BuildServiceProvider();
+
+if (provider.GetService<IBankClient>() is null)
+{
+    Console.WriteLine("Register IBankClient in composition root to fetch transactions.");
+    return;
+}
+
 var bankDataProvider = provider.GetRequiredService<IBankDataProvider>();
 
 var transactions = await bankDataProvider.GetTransactionsAsync(

@@ -1,4 +1,4 @@
-using FinanceAnalyzerCursor.Ledger.Application.Ports;
+using FinanceAnalyzerCursor.Ledger.Abstractions.External;
 using FinanceAnalyzerCursor.Ledger.Domain.Entities;
 using Microsoft.Extensions.Options;
 
