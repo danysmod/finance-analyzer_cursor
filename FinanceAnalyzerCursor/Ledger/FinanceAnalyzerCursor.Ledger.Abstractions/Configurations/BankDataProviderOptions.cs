@@ -1,4 +1,4 @@
-namespace FinanceAnalyzerCursor.Ledger.Application.Banking;
+namespace FinanceAnalyzerCursor.Ledger.Abstractions.Configurations;
 
 public sealed class BankDataProviderOptions
 {

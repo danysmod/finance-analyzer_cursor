@@ -8,6 +8,11 @@
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="DataProvider\" />
+    <Folder Include="Models\" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

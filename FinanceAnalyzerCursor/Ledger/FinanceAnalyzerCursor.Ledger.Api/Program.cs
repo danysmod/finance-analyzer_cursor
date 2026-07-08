@@ -1,4 +1,5 @@
-﻿using FinanceAnalyzerCursor.Ledger.Abstractions.External;
+﻿using FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices;
+using FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices.Bank;
 using FinanceAnalyzerCursor.Ledger.Api.Extensions;
 using FinanceAnalyzerCursor.Ledger.Application.Banking;
 using Microsoft.Extensions.DependencyInjection;

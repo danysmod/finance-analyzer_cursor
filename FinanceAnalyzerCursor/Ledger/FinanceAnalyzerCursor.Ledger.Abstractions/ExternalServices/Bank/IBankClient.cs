@@ -1,11 +1,10 @@
+using FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices.Bank.Models;
 using FinanceAnalyzerCursor.Ledger.Domain.Entities;
 
-namespace FinanceAnalyzerCursor.Ledger.Abstractions.External;
+namespace FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices.Bank;
 
 public interface IBankClient
 {
-    string BankId { get; }
-
     Task<IReadOnlyList<BankTransaction>> GetTransactionsAsync(
         BankTransactionQuery query,
         CancellationToken cancellationToken = default);

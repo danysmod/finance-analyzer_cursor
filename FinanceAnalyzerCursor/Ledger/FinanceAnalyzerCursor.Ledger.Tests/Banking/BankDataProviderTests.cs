@@ -1,5 +1,7 @@
 using AutoFixture;
-using FinanceAnalyzerCursor.Ledger.Abstractions.External;
+using FinanceAnalyzerCursor.Ledger.Abstractions.Configurations;
+using FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices.Bank;
+using FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices.Bank.Models;
 using FinanceAnalyzerCursor.Ledger.Application.Banking;
 using FinanceAnalyzerCursor.Ledger.Domain.Entities;
 using Microsoft.Extensions.Options;
@@ -72,6 +74,60 @@ public sealed class BankDataProviderTests
         // Assert
         Assert.Equal(250, result.Count);
         Assert.Equal(transactions.Select(t => t.ExternalId), result.Select(t => t.ExternalId));
+    }
+
+    [Fact]
+    public async Task GetTransactionsAsync_WhenLastPageInBatchIsPartial_ReturnsAllTransactionsWithoutNextBatch()
+    {
+        // Arrange
+        var transactions = CreateTransactions(230);
+        var bankClient = CreateBankClientMock(transactions);
+        var provider = CreateProvider(bankClient.Object, pageSize: 100, maxParallel: 3);
+
+        // Act
+        var result = await provider.GetTransactionsAsync(From, To);
+
+        // Assert
+        Assert.Equal(230, result.Count);
+        Assert.Equal(transactions.Select(t => t.ExternalId), result.Select(t => t.ExternalId));
+        bankClient.Verify(
+            c => c.GetTransactionsAsync(It.IsAny<BankTransactionQuery>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(3));
+        bankClient.Verify(
+            c => c.GetTransactionsAsync(
+                It.Is<BankTransactionQuery>(q => q.Offset == 0 && q.PageSize == 100),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        bankClient.Verify(
+            c => c.GetTransactionsAsync(
+                It.Is<BankTransactionQuery>(q => q.Offset == 100 && q.PageSize == 100),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        bankClient.Verify(
+            c => c.GetTransactionsAsync(
+                It.Is<BankTransactionQuery>(q => q.Offset == 200 && q.PageSize == 100),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetTransactionsAsync_WhenPartialPageFoundInBatch_DoesNotRequestNextBatch()
+    {
+        // Arrange
+        var transactions = CreateTransactions(150);
+        var bankClient = CreateBankClientMock(transactions);
+        var provider = CreateProvider(bankClient.Object, pageSize: 100, maxParallel: 3);
+
+        // Act
+        var result = await provider.GetTransactionsAsync(From, To);
+
+        // Assert
+        Assert.Equal(150, result.Count);
+        bankClient.Verify(
+            c => c.GetTransactionsAsync(
+                It.Is<BankTransactionQuery>(q => q.Offset >= 300),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

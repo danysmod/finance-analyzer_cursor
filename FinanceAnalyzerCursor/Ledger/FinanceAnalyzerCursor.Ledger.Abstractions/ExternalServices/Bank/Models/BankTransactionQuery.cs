@@ -1,4 +1,4 @@
-namespace FinanceAnalyzerCursor.Ledger.Abstractions.External;
+namespace FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices.Bank.Models;
 
 public sealed record BankTransactionQuery(
     DateOnly From,
