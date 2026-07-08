@@ -9,7 +9,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="DataProvider\" />
     <Folder Include="Models\" />
   </ItemGroup>
 

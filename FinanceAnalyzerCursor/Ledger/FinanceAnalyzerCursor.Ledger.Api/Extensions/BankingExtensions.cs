@@ -1,5 +1,6 @@
 using FinanceAnalyzerCursor.Ledger.Abstractions.Configurations;
 using FinanceAnalyzerCursor.Ledger.Application.Banking;
+using FinanceAnalyzerCursor.Ledger.Application.DataProvider;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

@@ -398,6 +398,23 @@ internal sealed class InMemoryTransactionRepository : ITransactionRepository
 
 Включены во всех проектах. Публичные API — с явными nullable-аннотациями.
 
+### Асинхронность
+
+В backend-сервисах **не использовать** `.ConfigureAwait(false)`:
+
+- в ASP.NET Core нет `SynchronizationContext`, захват контекста не создаёт лишних переключений потоков;
+- `await` без `.ConfigureAwait(false)` — стандартный и читаемый стиль для application code.
+
+```csharp
+// ✅
+var transactions = await _bankClient.GetTransactionsAsync(query, cancellationToken);
+
+// ❌
+var transactions = await _bankClient.GetTransactionsAsync(query, cancellationToken).ConfigureAwait(false);
+```
+
+Правило распространяется на все слои: Application, DataAccess, ExternalServices, Api, Tests.
+
 ---
 
 ## Чеклист перед merge
@@ -410,3 +427,4 @@ internal sealed class InMemoryTransactionRepository : ITransactionRepository
 - [ ] Unit-тесты следуют AAA; ports — через Moq; данные — через AutoFixture
 - [ ] Нет hand-written Mock/Stub классов без обоснования (read+write / stateful fake)
 - [ ] Нет пустых проектов-слоёв без реального содержимого (DataAccess, ExternalServices, Abstractions — только по необходимости)
+- [ ] Асинхронный код без `.ConfigureAwait(false)`
