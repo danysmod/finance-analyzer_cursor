@@ -4,4 +4,5 @@ public sealed record BankTransactionQuery(
     DateOnly From,
     DateOnly To,
     int Offset,
-    int PageSize);
+    int PageSize,
+    string AuthToken);

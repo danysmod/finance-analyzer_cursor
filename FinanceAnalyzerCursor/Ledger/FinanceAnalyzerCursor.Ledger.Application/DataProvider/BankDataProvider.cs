@@ -25,13 +25,14 @@ public sealed class BankDataProvider : IBankDataProvider
     public async Task<IReadOnlyList<BankTransaction>> GetTransactionsAsync(
         DateOnly from,
         DateOnly to,
+        string authToken,
         CancellationToken ct = default)
     {
         var pageSize = _options.PageSize;
         var parallelism = _options.MaxParallelRequests;
 
         var allTransactions = new List<BankTransaction>();
-        var pages = FetchTransactionPages(from, to, pageSize, parallelism, ct);
+        var pages = FetchTransactionPages(from, to, authToken, pageSize, parallelism, ct);
 
         await foreach (var page in pages.ReadAllAsync(ct))
         {
@@ -44,6 +45,7 @@ public sealed class BankDataProvider : IBankDataProvider
     private ChannelReader<BankTransactionPage> FetchTransactionPages(
         DateOnly from,
         DateOnly to,
+        string authToken,
         int pageSize,
         int parallelism,
         CancellationToken ct)
@@ -55,7 +57,7 @@ public sealed class BankDataProvider : IBankDataProvider
                 SingleWriter = false
             });
 
-        var requests = StreamRequests(from, to, pageSize, parallelism, stopChannel.Reader, ct);
+        var requests = StreamRequests(from, to, authToken, pageSize, parallelism, stopChannel.Reader, ct);
         var results = Channel.CreateBounded<BankTransactionPage>(
             new BoundedChannelOptions(parallelism)
             {
@@ -76,6 +78,7 @@ public sealed class BankDataProvider : IBankDataProvider
     private ChannelReader<BankTransactionQuery> StreamRequests(
         DateOnly from,
         DateOnly to,
+        string authToken,
         int pageSize,
         int parallelism,
         ChannelReader<bool> stop,
@@ -88,7 +91,7 @@ public sealed class BankDataProvider : IBankDataProvider
                 SingleWriter = true
             });
 
-        _ = StreamRequestsAsync(from, to, pageSize, requests.Writer, stop, ct);
+        _ = StreamRequestsAsync(from, to, pageSize, authToken, requests.Writer, stop, ct);
 
         return requests.Reader;
     }
@@ -97,6 +100,7 @@ public sealed class BankDataProvider : IBankDataProvider
         DateOnly from,
         DateOnly to,
         int pageSize,
+        string authToken,
         ChannelWriter<BankTransactionQuery> requests,
         ChannelReader<bool> stop,
         CancellationToken ct)
@@ -112,7 +116,7 @@ public sealed class BankDataProvider : IBankDataProvider
                     return;
                 }
 
-                var query = new BankTransactionQuery(from, to, offset, pageSize);
+                var query = new BankTransactionQuery(from, to, offset, pageSize, authToken);
                 await requests.WriteAsync(query, ct);
 
                 offset += pageSize + 1;
@@ -137,7 +141,7 @@ public sealed class BankDataProvider : IBankDataProvider
     {
         await foreach (var request in requests.ReadAllAsync(ct))
         {
-            var transactions = await _bankClient.GetTransactionsAsync(request, ct);
+            var transactions = await _bankClient.GetOperations(request, ct);
 
             await results.WriteAsync(new BankTransactionPage(request.Offset, transactions), ct);
 

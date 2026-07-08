@@ -7,5 +7,6 @@ public interface IBankDataProvider
     Task<IReadOnlyList<BankTransaction>> GetTransactionsAsync(
         DateOnly from,
         DateOnly to,
+        string authToken,
         CancellationToken ct = default);
 }

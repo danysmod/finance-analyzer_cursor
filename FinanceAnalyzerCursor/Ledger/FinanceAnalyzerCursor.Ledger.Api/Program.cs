@@ -1,8 +1,12 @@
-﻿using FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices;
-using FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices.Bank;
-using FinanceAnalyzerCursor.Ledger.Api.Extensions;
+﻿using FinanceAnalyzerCursor.Ledger.Api.Extensions;
 using FinanceAnalyzerCursor.Ledger.Application.Banking;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(AppContext.BaseDirectory)
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .Build();
 
 var services = new ServiceCollection();
 
@@ -12,21 +16,8 @@ services.AddLedgerApplication(options =>
     options.MaxParallelRequests = 4;
 });
 
-// Register IBankClient when a bank adapter is available:
-// services.AddSberBankClient(configuration);
+services.AddAnonBank1Client(configuration);
 
 using var provider = services.BuildServiceProvider();
 
-if (provider.GetService<IBankClient>() is null)
-{
-    Console.WriteLine("Register IBankClient in composition root to fetch transactions.");
-    return;
-}
-
-var bankDataProvider = provider.GetRequiredService<IBankDataProvider>();
-
-var transactions = await bankDataProvider.GetTransactionsAsync(
-    from: new DateOnly(2026, 1, 1),
-    to: new DateOnly(2026, 1, 31));
-
-Console.WriteLine($"Fetched {transactions.Count} transactions.");
+var anonBank1 = provider.GetRequiredService<IBankDataProvider>();

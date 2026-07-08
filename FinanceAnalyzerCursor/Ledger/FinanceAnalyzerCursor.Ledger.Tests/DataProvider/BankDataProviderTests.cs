@@ -7,7 +7,7 @@ using FinanceAnalyzerCursor.Ledger.Domain.Entities;
 using Microsoft.Extensions.Options;
 using Moq;
 
-namespace FinanceAnalyzerCursor.Ledger.Tests.Banking;
+namespace FinanceAnalyzerCursor.Ledger.Tests.DataProvider;
 
 public sealed class BankDataProviderTests
 {
@@ -30,7 +30,7 @@ public sealed class BankDataProviderTests
         var provider = CreateProvider(bankClient.Object, pageSize: 100, maxParallel: 3);
 
         // Act
-        var result = await provider.GetTransactionsAsync(From, To);
+        var result = await provider.GetTransactionsAsync(From, To, string.Empty);
 
         // Assert
         Assert.Equal(230, result.Count);
@@ -38,17 +38,17 @@ public sealed class BankDataProviderTests
             transactions.Select(t => t.ExternalId).OrderBy(static id => id),
             result.Select(t => t.ExternalId).OrderBy(static id => id));
         bankClient.Verify(
-            c => c.GetTransactionsAsync(
+            c => c.GetOperations(
                 It.Is<BankTransactionQuery>(q => q.Offset == 0 && q.PageSize == 100),
                 It.IsAny<CancellationToken>()),
             Times.Once);
         bankClient.Verify(
-            c => c.GetTransactionsAsync(
+            c => c.GetOperations(
                 It.Is<BankTransactionQuery>(q => q.Offset == 101 && q.PageSize == 100),
                 It.IsAny<CancellationToken>()),
             Times.Once);
         bankClient.Verify(
-            c => c.GetTransactionsAsync(
+            c => c.GetOperations(
                 It.Is<BankTransactionQuery>(q => q.Offset == 202 && q.PageSize == 100),
                 It.IsAny<CancellationToken>()),
             Times.Once);
@@ -62,7 +62,7 @@ public sealed class BankDataProviderTests
         var provider = CreateProvider(bankClient.Object);
 
         // Act
-        var result = await provider.GetTransactionsAsync(From, To);
+        var result = await provider.GetTransactionsAsync(From, To, string.Empty);
 
         // Assert
         Assert.Empty(result);
@@ -77,7 +77,7 @@ public sealed class BankDataProviderTests
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            provider.GetTransactionsAsync(new DateOnly(2026, 2, 1), new DateOnly(2026, 1, 1)));
+            provider.GetTransactionsAsync(new DateOnly(2026, 2, 1), new DateOnly(2026, 1, 1), string.Empty));
     }
 
     private static Mock<IBankClient> CreateBankClientMock(
@@ -85,7 +85,7 @@ public sealed class BankDataProviderTests
     {
         var bankClient = new Mock<IBankClient>();
         bankClient
-            .Setup(c => c.GetTransactionsAsync(It.IsAny<BankTransactionQuery>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.GetOperations(It.IsAny<BankTransactionQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((BankTransactionQuery query, CancellationToken _) =>
                 pages.GetValueOrDefault(query.Offset, []));
         return bankClient;

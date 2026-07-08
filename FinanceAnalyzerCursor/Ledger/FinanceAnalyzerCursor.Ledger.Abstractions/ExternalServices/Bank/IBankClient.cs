@@ -5,7 +5,7 @@ namespace FinanceAnalyzerCursor.Ledger.Abstractions.ExternalServices.Bank;
 
 public interface IBankClient
 {
-    Task<IReadOnlyList<BankTransaction>> GetTransactionsAsync(
+    Task<IReadOnlyList<BankTransaction>> GetOperations(
         BankTransactionQuery query,
         CancellationToken cancellationToken = default);
 }
